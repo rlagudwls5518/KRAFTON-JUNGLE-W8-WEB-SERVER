@@ -4,10 +4,10 @@ OBJS = csapp.o echo.o    # 공통으로 사용할 객체 파일 목록 (서버�
 
 all: echoserveri echoclient  # make만 입력했을 때 기본으로 빌드할 대상
 
-echoserveri: echoserveri.o $(OBJS)   # echoserveri를 만들기 위해 필요한 파일들
+echoserveri: echo_server.o $(OBJS)   # echoserveri를 만들기 위해 필요한 파일들
 	$(CC) $(CFLAGS) -o $@ $^ -pthread  # gcc -Wall -O2 -o echoserveri echoserveri.o csapp.o echo.o -pthread
 
-echoclient: echoclient.o $(OBJS)     # echoclient를 만들기 위해 필요한 파일들
+echoclient: echo_client.o $(OBJS)     # echoclient를 만들기 위해 필요한 파일들
 	$(CC) $(CFLAGS) -o $@ $^ -pthread  # gcc -Wall -O2 -o echoclient echoclient.o csapp.o echo.o -pthread
 
 clean:                 # make clean 입력 시 실행됨 (빌드된 파일들을 삭제)
