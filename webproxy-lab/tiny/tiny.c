@@ -1,11 +1,3 @@
-/* $begin tinymain */
-/*
- * tiny.c - A simple, iterative HTTP/1.0 Web server that uses the
- *     GET method to serve static and dynamic content.
- *
- * Updated 11/2019 droh
- *   - Fixed sprintf() aliasing issue in serve_static(), and clienterror().
- */
 #include "csapp.h"
 
 void doit(int fd); // 하나의 요청과 응답의 과정 함수 
@@ -13,8 +5,8 @@ void read_requesthdrs(rio_t *rp); // 헤더의 끝을 찾는 함수
 int parse_uri(char *uri, char *filename, char *cgiargs); // 클라가 요청한 uri이 정적 컨텐츠인지 동적 컨텐츠인지 확인하고 CGI환경변수랑 경로 설정하는 함수
 void serve_static(int fd, char *filename, int filesize, int flag); // 서버에 저장된 정적 컨텐츠를 클라에 응답을 보내는 함수
 void get_filetype(char *filename, char *filetype); //파일이름을 조사해서  mime타입 설정
-void serve_dynamic(int fd, char *filename, char *cgiargs);// 서버에 저장된 동적컨텐츠를 클라에 응답을 보냄
-void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg);// 클라에러
+void serve_dynamic(int fd, char *filename, char *cgiargs, char *method);// 서버에 저장된 동적컨텐츠를 클라에 응답을 보냄
+void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg);// 클라 에러처리 
 
 int main(int argc, char **argv)
 {
@@ -110,9 +102,8 @@ void doit(int fd){
     }
 
     // 동적 서버에 인자를 같이 보낸다.
-    serve_dynamic(fd, filename, cgiargs);
+    serve_dynamic(fd, filename, cgiargs, method);
   }
-
 }
 
 // 클라이언트가 버퍼 rp에 보낸 나머지 요청 헤더들을 무시 -> 헤더의 끝을 찾는?
@@ -257,8 +248,9 @@ void get_filetype(char *filename, char *filetype) {
 }
 
 // 클라이언트가 원하는 동적 컨텐츠 디렉토리를 받아온다. 응답 라인과 헤더를 작성하고 서버에게 보내면, CGI 자식 프로세스를 fork하고, 그 프로세스의 표준 출력을 클라이언트 출력과 연결한다.
-void serve_dynamic(int fd, char *filename, char *cgiargs) {
-  char buf[MAXLINE], *emptylist[] = { NULL };
+void serve_dynamic(int fd, char *filename, char *cgiargs, char *method) {
+  char buf[MAXLINE];
+  char *emptylist[] = {NULL};
 
   // return first part of HTTP response
   sprintf(buf, "HTTP/1.0 200 OK\r\n");
@@ -268,8 +260,10 @@ void serve_dynamic(int fd, char *filename, char *cgiargs) {
 
   if (Fork() == 0) {
     setenv("QUERY_STRING", cgiargs, 1);
+    setenv("REQUEST_METHOD", method, 1); //-> get인지 head인지
 
-    // 클라이언트의 표준 출력을 CGI 프로그램의 표준 출력과 연결한다. 따라서 앞으로 CGI 프로그램에서 printf하면 클라이언트에서 출력된다.
+    // 클라이언트의 표준 출력을 CGI 프로그램의 표준 출력과 연결한다. 
+    // 앞으로 CGI 프로그램에서 printf하면 클라이언트에서 출력된다.
     Dup2(fd, STDOUT_FILENO);
     Execve(filename, emptylist, environ);
   }

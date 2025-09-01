@@ -6,9 +6,11 @@
 
 int main(void)
 {
-  char *buf, *p;
+  char *buf, *p, *method;
   char arg1[MAXLINE], arg2[MAXLINE], content[MAXLINE];
   int n1 = 0, n2 = 0;
+
+  method = getenv("REQUEST_METHOD");//GET인지 HEAD인지 가져오기
 
   /* Extract the two arguments */
   if ((buf = getenv("QUERY_STRING")) != NULL)
@@ -34,8 +36,8 @@ int main(void)
   printf("Content-length: %d\r\n", (int)strlen(content));
   printf("\r\n");
 
+  if(method && strcasecmp(method, "HEAD") != 0) printf("%s", content); // GET일때만 본문출력
   
-  printf("%s", content);
   fflush(stdout);
 
   exit(0);
