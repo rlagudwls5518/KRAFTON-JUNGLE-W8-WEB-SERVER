@@ -33,6 +33,8 @@ int main(void)
   printf("Content-type: text/html\r\n");
   printf("Content-length: %d\r\n", (int)strlen(content));
   printf("\r\n");
+
+  
   printf("%s", content);
   fflush(stdout);
 

@@ -11,7 +11,7 @@
 void doit(int fd); // 하나의 요청과 응답의 과정 함수 
 void read_requesthdrs(rio_t *rp); // 헤더의 끝을 찾는 함수
 int parse_uri(char *uri, char *filename, char *cgiargs); // 클라가 요청한 uri이 정적 컨텐츠인지 동적 컨텐츠인지 확인하고 CGI환경변수랑 경로 설정하는 함수
-void serve_static(int fd, char *filename, int filesize); // 서버에 저장된 정적 컨텐츠를 클라에 응답을 보내는 함수
+void serve_static(int fd, char *filename, int filesize, int flag); // 서버에 저장된 정적 컨텐츠를 클라에 응답을 보내는 함수
 void get_filetype(char *filename, char *filetype); //파일이름을 조사해서  mime타입 설정
 void serve_dynamic(int fd, char *filename, char *cgiargs);// 서버에 저장된 동적컨텐츠를 클라에 응답을 보냄
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg);// 클라에러
@@ -54,6 +54,7 @@ void doit(int fd){
   //7. 동적컨텐츠이면  해당파일이 일반파일인지? 실행권한을 가지고 있는지? 확인하고 serve_dynamic 실행해서 자식프로세스만들어서 CGI실행해서 내보냄 
 
   int is_static;
+  int flag;
   struct stat sbuf;
   char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE]; // 클라이언트에게서 받은 요청
   char filename[MAXLINE], cgiargs[MAXLINE]; // parse_uri를 통해서 채워진다.
@@ -64,12 +65,18 @@ void doit(int fd){
   Rio_readlineb(&rio, buf, MAXLINE);  // rio에 있는 응답라인 한 줄을 모두 buf로 옮긴다.
 
   printf("Request headers:\n");
-  printf("%s", buf);  // 요청 라인 buf = "GET /hi HTTP/1.1\0"을 표준 출력해준다.
+  printf("%s", buf); 
 
   sscanf(buf, "%s %s %s", method, uri, version);  // buf에서 문자열 3개를 읽어와서 method, uri, version이라는 문자열에 저장한다.
-
-  // 요청 method가 GET이 아니면 종료한다. 즉, main으로 가서 연결을 닫고, 다음 요청을 기다린다.
-  if (strcasecmp(method, "GET")) {
+  
+  // 요청 method가 GET이랑 HEAD 아니면 종료한다. 즉, main으로 가서 연결을 닫고, 다음 요청을 기다린다.
+  if (strcasecmp(method, "GET") == 0) {
+    flag = 1;
+  }
+  else if(strcasecmp(method, "HEAD") == 0){
+    flag = 0;
+  }
+  else{
     clienterror(fd, method, "501", "Not implemented", "Tiny does not implement this method");
     return;
   }
@@ -94,7 +101,7 @@ void doit(int fd){
       return;
     }
     // reponse header의 content-length를 위해 정적 서버에 파일의 사이즈를 같이 보낸다
-    serve_static(fd, filename, sbuf.st_size);
+    serve_static(fd, filename, sbuf.st_size, flag);
 
   } else {  // 동적 컨텐츠인 경우
     if (!(S_ISREG(sbuf.st_mode)) || !(S_IXUSR & sbuf.st_mode)) {  // 일반 파일이 아니거나, 실행 파일이 아니면
@@ -115,8 +122,7 @@ void read_requesthdrs(rio_t *rp) {
   Rio_readlineb(rp, buf, MAXLINE);
 
   // 버퍼 rp의 마지막 끝을 만날 때까지(Content-Length의 마지막 \r\n) 계속 출력해줘서 없앤다.
-  while (strcmp(buf, "\r\n")) {
-    Rio_readlineb(rp, buf, MAXLINE);
+  while (Rio_readlineb(rp, buf, MAXLINE) > 0 && strcmp(buf, "\r\n")) {
     printf("%s", buf);
   }
   return;
@@ -172,7 +178,9 @@ int parse_uri(char *uri, char *filename, char *cgiargs) {
       strcpy(cgiargs, "");
     }
 
-    strcpy(filename, '.');  // 현재 디렉토리에서 시작한다.
+    strcpy(filename, ".");  // 현재 디렉토리에서 시작한다.
+    //'' "" 문자와 문자열관계 주의
+
     strcat(filename, uri);  // uri를 넣어준다.
   }
 
@@ -180,35 +188,55 @@ int parse_uri(char *uri, char *filename, char *cgiargs) {
 }
 
 
-void serve_static(int fd, char *filename, int filesize){
+void serve_static(int fd, char *filename, int filesize, int flag){
   // 1. 파일 종류를 확인(확장자)
   // 2. 확장자를 바탕으로 컨텐츠 타입이나 길이헤더를 클라에 전송(헤더의 끝을 알리는 빈줄도 같이 전송)
   int srcfd;
   char *srcp, filetype[MAXLINE], buf[MAXBUF];
 
   //클라이언트에게 응답 헤더 보내기
-
   get_filetype(filename, filetype);//파일타입 가져오기
-  sprintf(buf, "HTTP/1.0 200 OK\r\n");  // 응답 라인 작성하기
-  sprintf(buf, "%sServer : Tiny Web Server\r\n", buf);  // 응답 헤더 작성하기
-  sprintf(buf, "%sConnection : close\r\n");
-  sprintf(buf, "%sContent-Length : %d\r\n", buf, filesize);
-  sprintf(buf, "%sContent-Type : %s\r\n", buf, filetype);
 
-  //응답라인과 헤더를 클라이언트에게 보낸다
+  // 첫 줄은 버퍼의 시작부터 작성
+  sprintf(buf, "HTTP/1.0 200 OK\r\n");
+  // 두 번째 줄부터는 이전에 쓴 내용의 끝에 이어 붙임
+  sprintf(buf + strlen(buf), "Server: Tiny Web Server\r\n");
+  sprintf(buf + strlen(buf), "Connection: close\r\n");
+  sprintf(buf + strlen(buf), "Content-length: %d\r\n", filesize);
+  // 헤더의 끝을 알리는 빈 줄(\r\n)을 반드시 추가해야 함
+  sprintf(buf + strlen(buf), "Content-type: %s\r\n\r\n", filetype);
+    
+
+  // sprintf(buf, "HTTP/1.0 200 OK\r\n");  // 응답 라인 작성하기
+  // sprintf(buf, "%sServer : Tiny Web Server\r\n", buf);  // 응답 헤더 작성하기
+  // sprintf(buf, "%sConnection : close\r\n", buf);
+  // sprintf(buf, "%sContent-Length : %d\r\n", buf, filesize);
+  // sprintf(buf, "%sContent-Type : %s\r\n", buf, filetype);
+
+  //응답라인과 헤더를 클라이언트에게 보냄
   Rio_writen(fd, buf, strlen(buf));
-
   printf("Response headers : \n");
-  prinf("%s", buf);
+  printf("%s", buf);
 
-
+  if(!flag) return;//HEAD메소드는 바디출력 하지않고 리턴
+  
   //클라이언트에게 응답 바디 보내기
-  srcfd = Open(filename,O_RDONLY, 0); // filename의 이름을 갖는 파일을 읽기전용으로 열기
-  srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0); // 메모리에 파일 내용을 동적 할당한다.
-  Close(srcfd); // 파일을 닫는다.
-  Rio_writen(fd, srcp, filesize); // 해당 메모리에 있는 파일 내용들을 fd에 보낸다.(= 읽는다)
-  Munmap(srcp, filesize); //메모리 동적할당 해제
+  // srcfd = Open(filename,O_RDONLY, 0); // filename의 이름을 갖는 파일을 읽기전용으로 열기
+  // srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0); // 메모리에 파일 내용을 동적 할당한다.
+  // Close(srcfd); // 파일을 닫는다.
+  // Rio_writen(fd, srcp, filesize); // 해당 메모리에 있는 파일 내용들을 fd에 보낸다.(= 읽는다)
+  // Munmap(srcp, filesize); //메모리 동적할당 해제
 
+  //숙제 11.9
+  //메모리 복사과정이 한번 더 일어나서 비효율적 
+  srcfd = Open(filename,O_RDONLY, 0);     // 1. 파일 읽기 전용으로 열기
+
+  srcp = (char *)Malloc(filesize);        // 2. 파일 크기만큼 메모리 할당
+  Rio_readn(srcfd, srcp, filesize);       // 3. 파일 내용을 메모리로 모두 읽기 (복사)
+
+  Close(srcfd);                           // 4. 파일 닫기
+  Rio_writen(fd, srcp, filesize);         // 5. 메모리의 내용을 클라이언트에게 전송
+  free(srcp);                             // 6. 할당한 메모리 해제
 }
 
 // Response header의 Conten-Type에 필요한 함수로, filename을 조사해서 각각의 식별자에 맞는 MIME 타입을 filetype에 입력해준다.
@@ -221,8 +249,8 @@ void get_filetype(char *filename, char *filetype) {
     strcpy(filetype, "image/png");
   } else if (strstr(filename, ".jpg")) {
     strcpy(filetype, "image/jpeg");
-  } else if(strstr(filename, ".mpg")){
-    strcpy(filetype, "video/mpg");
+  } else if(strstr(filename, ".mp4")){//숙제 11.7 MP4비디오파일 처리
+    strcpy(filetype, "video/mp4");
   } else {
     strcpy(filetype, "text/plain");
   }
@@ -260,7 +288,7 @@ void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longms
                   errnum, shortmsg, longmsg, cause);
 
   // print HTTP response
-  sprintf(buf, "HTTP/1.0 %s %s\r\n", errnum, shortmsg);
+  sprintf(buf, "HTTP/1.1 %s %s\r\n", errnum, shortmsg);
   Rio_writen(fd, buf, strlen(buf));
 
   sprintf(buf, "Content-Type: text/html\r\n");
