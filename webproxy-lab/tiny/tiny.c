@@ -65,9 +65,11 @@ void doit(int fd){
   if (strcasecmp(method, "GET") == 0) {
     flag = 1;
   }
+
   else if(strcasecmp(method, "HEAD") == 0){
     flag = 0;
   }
+
   else{
     clienterror(fd, method, "501", "Not implemented", "Tiny does not implement this method");
     return;
@@ -188,7 +190,7 @@ void serve_static(int fd, char *filename, int filesize, int flag){
   //클라이언트에게 응답 헤더 보내기
   get_filetype(filename, filetype);//파일타입 가져오기
 
-  // 첫 줄은 버퍼의 시작부터 작성
+  // 첫 줄은 버퍼의 시작주소부터 작성
   sprintf(buf, "HTTP/1.0 200 OK\r\n");
   // 두 번째 줄부터는 이전에 쓴 내용의 끝에 이어 붙임
   sprintf(buf + strlen(buf), "Server: Tiny Web Server\r\n");
@@ -196,13 +198,6 @@ void serve_static(int fd, char *filename, int filesize, int flag){
   sprintf(buf + strlen(buf), "Content-length: %d\r\n", filesize);
   // 헤더의 끝을 알리는 빈 줄(\r\n)을 반드시 추가해야 함
   sprintf(buf + strlen(buf), "Content-type: %s\r\n\r\n", filetype);
-    
-
-  // sprintf(buf, "HTTP/1.0 200 OK\r\n");  // 응답 라인 작성하기
-  // sprintf(buf, "%sServer : Tiny Web Server\r\n", buf);  // 응답 헤더 작성하기
-  // sprintf(buf, "%sConnection : close\r\n", buf);
-  // sprintf(buf, "%sContent-Length : %d\r\n", buf, filesize);
-  // sprintf(buf, "%sContent-Type : %s\r\n", buf, filetype);
 
   //응답라인과 헤더를 클라이언트에게 보냄
   Rio_writen(fd, buf, strlen(buf));
@@ -212,6 +207,7 @@ void serve_static(int fd, char *filename, int filesize, int flag){
   if(!flag) return;//HEAD메소드는 바디출력 하지않고 리턴
   
   //클라이언트에게 응답 바디 보내기
+
   // srcfd = Open(filename,O_RDONLY, 0); // filename의 이름을 갖는 파일을 읽기전용으로 열기
   // srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0); // 메모리에 파일 내용을 동적 할당한다.
   // Close(srcfd); // 파일을 닫는다.
